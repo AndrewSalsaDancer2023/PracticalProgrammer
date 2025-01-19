@@ -1,7 +1,6 @@
 if(NOT (CMAKE_SYSTEM_NAME STREQUAL "Linux"))
 	message(FATAL_ERROR "This CMake file works on linux systems only! CMake will exit!" )
 endif()
-set(CONAN_DISABLE_CHECK_COMPILER TRUE)
 
 find_package(GTest REQUIRED)
 if(NOT GTest_FOUND)
