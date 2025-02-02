@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.26)
+set(ProjectName Main)
+project(${ProjectName} CXX)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/coverage")
+add_subdirectory(src bin)
+add_subdirectory(test)
