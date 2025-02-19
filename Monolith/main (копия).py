@@ -6,7 +6,7 @@ import string
 
 # from collections import OrderedDict
 
-from core.engine import Forest
+
 #https://python-school.ru/blog/data-structures/sort-dict/
 # https://vibhu4agarwal.hashnode.dev/python-cs-stl-data-structures-and-their-
 #https://www.freecodecamp.org/news/lambda-sort-list-in-python/
@@ -14,22 +14,40 @@ from core.engine import Forest
 # https://motor.readthedocs.io/en/stable/tutorial-asyncio.html
 # https://pymongo.readthedocs.io/en/stable/tutorial.html
 from core.engine_utils import (normalize_string, create_db_documents_generator,
-                               get_num_prefixes_in_completion_forest)
+                               get_num_prefixes_in_completion_forest, create_prefix_forest_from_file)
 
 from core.dbengine import DocumentRepository
 from core.exception_types import CollectionDeletionError
 
 
-def delete_existent_collection(db_name:string, coll_name:string, repo: DocumentRepository) -> None:
-    coll_names = rep.get_collection_names(db_name)
+def delete_existent_collection(database_name:string, collection_name:string, repo: DocumentRepository) -> None:
+    coll_names = repo.get_collection_names(db_name)
 
     if coll_name in coll_names:
-        if not repo.drop_collection(db_name, coll_name):
+        if not repo.drop_collection(database_name, collection_name):
             raise CollectionDeletionError("Unable to delete collection {} from database {}".format(db_name, db_name))
 
 
-def output_progress(num_documents: int, coll_name:string) -> None:
-    print("{} documents has written to collection {}".format(num_documents, coll_name))
+def output_progress(num_documents: int, collection_name:string) -> None:
+    print("{} documents has written to collection {}".format(num_documents, collection_name))
+
+def create_prefix_database(database_name: string, collection_name: string, words_file_path:string):
+    frst = create_prefix_forest_from_file(words_file_path)
+    num_words = get_num_prefixes_in_completion_forest(frst)
+    print('Words number:{}'.format(num_words))
+    rep = DocumentRepository()
+    delete_existent_collection(database_name, collection_name, rep)
+
+    gen = create_db_documents_generator(frst)
+
+    num_insertions = rep.insert_documents_in_database(gen, output_progress, database_name, collection_name, 100)
+
+    num_docs = rep.get_documents_number(database_name, collection_name)
+    if num_docs != num_insertions:
+        print("Number of words {} in file doesn't match to number of documents in the collection {}".format(num_words,
+                                                                                                            num_docs))
+    else:
+        print("Creation of collection completed")
 
 if __name__ == "__main__":
     try:
@@ -41,18 +59,18 @@ if __name__ == "__main__":
         #     print(word)
 
 
-        frst = Forest()
-        frst.insert_string(normalize_string("      cat         "))
-        frst.insert_string(normalize_string("camel"))
-        frst.insert_string(normalize_string("camera"))
-        frst.insert_string(normalize_string("carnival"))
-        frst.insert_string(normalize_string("car"))
+        # frst = Forest()
+        # frst.insert_string(normalize_string("      cat         "))
+        # frst.insert_string(normalize_string("camel"))
+        # frst.insert_string(normalize_string("camera"))
+        # frst.insert_string(normalize_string("carnival"))
+        # frst.insert_string(normalize_string("car"))
+        #
+        # frst.insert_string(normalize_string("abbreviate"))
+        # frst.insert_string(normalize_string("adventure"))
+        # frst.insert_string(normalize_string("accumulator"))
 
-        frst.insert_string(normalize_string("abbreviate"))
-        frst.insert_string(normalize_string("adventure"))
-        frst.insert_string(normalize_string("accumulator"))
 
-        # print('num words:  '+ str(get_num_words_in_completion_forest(frst)))
         # profiling https: // habr.com / ru / companies / vk / articles / 202832 /
 
 
@@ -107,35 +125,11 @@ if __name__ == "__main__":
         #     pprint.pprint(r)
         #
         # gen = create_db_documents_generator(frst)
-
-        # frst = create_prefix_forest_from_file('data/english_words.txt') UNCOMMENT
-        # num_words = get_num_words_in_completion_forest(frst)
-        # print('Words number:{}'.format(num_words))
-        num_words = get_num_prefixes_in_completion_forest(frst)
-        print('Words number:{}'.format(num_words))
-
-        rep = DocumentRepository()
+        db_name = "temp_mono"
+        coll_name = "eng_prefix"
+        words_dict_path = 'data/english_words.txt'
+        create_prefix_database(db_name, coll_name, words_dict_path)
         # proc = PrefixProcessor(rep, "temp_mono", "eng_prefix")
-        delete_existent_collection("temp_mono", "eng_prefix", rep)
-
-        gen = create_db_documents_generator(frst)
-
-        num_insertions = rep.insert_documents_in_database(gen, output_progress,"temp_mono", "eng_prefix", 5)
-        # i = 1
-        # for dmp in gen:
-        #     # print(dmp)
-        #     res = collection.insert_one(dmp)
-        #     print(res.acknowledged)
-        #     print(res)
-        #     i += 1
-        #     if i >= 3:
-        #         break
-
-        num_docs = rep.get_documents_number("temp_mono", "eng_prefix")
-        if num_docs != num_insertions:
-            print("Number of words {} in file doesn't match to number of documents in the collection {}".format(num_words, num_docs))
-        else:
-            print("Creation of collection completed")
 
         # collection.aggregate()
         # update_res = collection.update_many({"query.query": "car"}, {"$set": {"query.$.counter": 25}})
