@@ -11,8 +11,11 @@ def normalize_string(entire_string: string) -> string:
     chars_to_del = ' \r\n\t'
     return entire_string.strip(chars_to_del)
 
-# def query_info_to_json(obj: QueryInfo) -> str:
-#     return json.dumps(obj.__dict__)
+def convert_bytes_list_to_response(bytes_list: list[bytes]) -> list[dict]:
+    res = []
+    for el in bytes_list:
+        res.append({'variant': el.decode('UTF-8')})
+    return res
 
 def create_db_documents_generator(entire_forest: Forest) -> dict:
     for key in entire_forest.get_keys():
@@ -93,6 +96,9 @@ def create_search_word_filter(part1_key: string, part2_key: string) -> string:
 def create_modify_word_count_predicate(counter_key: string, new_counter_value: int) -> dict[string, string]:
     return { "$set" : { counter_key: new_counter_value  } }
 
+def create_increment_counter_predicate(counter_key: string, increment_value: int) -> dict[string, string]:
+    return {"$inc": {counter_key: increment_value}}
+
 def create_match_aggregate(prefix_key: string, prefix_value: string) -> dict:
     return {"$match": {prefix_key: prefix_value}}
 
@@ -108,9 +114,20 @@ def create_limit_aggregate(limit_value: int) -> dict:
 def create_group_aggregate(array_key: string) -> dict:
     return {"$group": {"_id": "$_id", array_key : {"$push": "${}".format(array_key)} }}
 
+def create_project_aggregate(array_key: string, counter_key: string) -> dict:
+    return {"$project": {'{}.{}'.format(array_key, counter_key) : 1, "_id" : 0 }}
+
 def create_pipeline(*args) -> Pipeline:
     res = []
     for arg in args:
         res.append(arg)
 
     return res
+
+def create_project_for_prefix_aggregate(prefix_key: string, prefix_length_key: string, completions_key: string) -> dict:
+    return {"$project": {"_id": 0, prefix_key: 1, prefix_length_key: {"$strLenCP": "${}".format(prefix_key)}, completions_key: 1}}
+
+def create_match_for_prefix_aggregate(prefix_length_key: string, prefix_length_value: int) -> dict:
+    return {"$match": { prefix_length_key: {"$lte" : prefix_length_value} }}
+
+# https://www.geeksforgeeks.org/how-to-get-string-length-in-mongodb/

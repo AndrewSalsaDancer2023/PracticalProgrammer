@@ -175,4 +175,4 @@ if __name__ == "__main__":
     except Exception as ex:
         print(ex.args)
 
-
+# https://realpython.com/python-async-iterators/#async-iterators-in-concurrent-code
