@@ -8,7 +8,6 @@
 TEST(AlgoTest, Equal) {
 
  std::atomic<long long> sum(0);
- //long long int sum = 0;
    int vec_size{1'000'000};
    
    std::vector<int> acc(vec_size);

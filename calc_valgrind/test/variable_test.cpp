@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include <pthread.h>
+#include <thread>
+#include <mutex>
 
 pthread_mutex_t lock; 
 
@@ -33,4 +35,19 @@ TEST(EqualityTest, Equal) {
    pthread_join(child, NULL);
    EXPECT_EQ(var, 2);
 }
+
+std::mutex std_mutex;
+TEST(EqualityTestStdLibrary, Equal) {
+   var = 0;
+   std::thread other([&var]() {
+        std::lock_guard<std::mutex> lock(std_mutex);
+   	var++;
+   });
+   std::lock_guard<std::mutex> lock(std_mutex);   
+   var++;
+   other.join();
+
+   EXPECT_EQ(var, 2);
+}
+
 
