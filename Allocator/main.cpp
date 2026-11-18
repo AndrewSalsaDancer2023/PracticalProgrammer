@@ -6,19 +6,16 @@
 #include <random>
 
 #include <iostream>
-#include <list> // Меняем вектор на список!
+#include <list> 
 #include <cstdio>
 #include <cstddef>
 #include <memory>
 
-
 #include <vector>
 #include <cassert>
-
-#include <cstddef>
 #include <new>
-
 #include <stdexcept>
+#include <type_traits>
 
 template <std::size_t CapacityBytes>
 class StackPool {
@@ -37,17 +34,7 @@ public:
     }
 
     void deallocate(void*, std::size_t bytes) noexcept {
-        // Арена: ничего не делаем, память освобождается только reset()/destroy.
-    }
-
-	// Все экземпляры StackPool взаимозаменяемы по контракту deallocate:
-    // deallocate — no-op, любой экземпляр безопасно «освободит» чужую память.
-   // bool operator==(const StackPool&) const noexcept { return true; }
-   // bool operator!=(const StackPool&) const noexcept { return false; }
-    
-    bool contains(const void* p) const noexcept {
-        const auto* b = static_cast<const unsigned char*>(p);
-        return b >= buffer_ && b < buffer_ + CapacityBytes;
+        //память освобождается только reset()
     }
 
     void reset() noexcept { current_ = buffer_; }
@@ -166,9 +153,6 @@ struct pools_interchangeable : std::is_same<P1, P2> {};
 template <std::size_t N1, std::size_t N2>
 struct pools_interchangeable<StackPool<N1>, StackPool<N2>> : std::true_type {};
 
-#include <cstddef>
-#include <memory>
-#include <type_traits>
 
 template <typename T, typename Pool>
 class CustomAllocator {
@@ -179,20 +163,17 @@ public:
     template <typename U>
     struct rebind { using other = CustomAllocator<U, Pool>; };
 
-    // Stateful: пулы могут быть разными → не всегда равны
-    using is_always_equal = std::false_type;
-
-
     CustomAllocator() noexcept = default;
     explicit CustomAllocator(Pool* pool) noexcept : pool_(pool) {}
 
-    // Конвертирующий конструктор — обязателен для rebind
+    // Конструктор обязателен для rebind
     template <typename U>
     CustomAllocator(const CustomAllocator<U, Pool>& other) noexcept
         : pool_(other.get_pool()) {}
 
     T* allocate(std::size_t n) {
-        if (!pool_) throw std::bad_alloc();
+        if (!pool_ || (n > std::numeric_limits<std::size_t>::max() / sizeof(T)))
+		    throw std::bad_alloc();
         void* p = pool_->allocate(n * sizeof(T), alignof(T));
         return static_cast<T*>(p);
     }
@@ -293,7 +274,6 @@ static void ListIteration_Setup(benchmark::State& state, bool use_stack) {
             for (int i = 0; i < elements; ++i) l.push_back(i);
             state.ResumeTiming();
 
-            // ЗАМЕР: Полный последовательный обход списка
             long long sum = 0;
             for (int val : l) {
                 sum += val;
@@ -317,7 +297,6 @@ static void FreeList_List_Iter(benchmark::State& state) {
         for (int i = 0; i < elements; ++i) l.push_back(i);
  	       state.ResumeTiming();
 
-        // ЗАМЕР: Полный последовательный обход списка
         long long sum = 0;
         for (int val : l) {
    		    sum += val;
@@ -341,218 +320,218 @@ static void StdMap_Insert(benchmark::State& state) {
     for (auto _ : state) {
         std::map<int, int> m;
         for (int i = 0; i < elements; ++i) {
-            m[i] = i; // Делает тяжелый вызов malloc под ноду дерева
+            m[i] = i; 
         }
         benchmark::DoNotOptimize(m.size());
     }
 }
 BENCHMARK(StdMap_Insert)->Arg(10000);
 
-// Тест 5: Наш StackAllocator + std::map (10 000 аллокаций за наносекунды)
+// Тест 5: Наш CustomAllocator + std::map
 static void StackMap_Insert(benchmark::State& state) {
     const int elements = state.range(0);
     
     for (auto _ : state) {
-        global_pool.reset(); // Сброс всей памяти дерева за O(1)
+        global_pool.reset(); 
         
-        // Передаем наш StackAllocator в std::map
         CustomAllocator<std::pair<const int, int>, StackPool<POOL_SIZE_BYTES>> a1(&global_pool);
         std::map<int, int, std::less<int>, CustomAllocator<std::pair<const int, int>, StackPool<POOL_SIZE_BYTES>>> m{
             std::less<int>(), 
             CustomAllocator<std::pair<const int, int>, StackPool<POOL_SIZE_BYTES>>(a1)};
         
         for (int i = 0; i < elements; ++i) {
-            m[i] = i; // Быстрый сдвиг указателя в пуле на стеке
+            m[i] = i; 
         }
         benchmark::DoNotOptimize(m.size());
     }
 }
 BENCHMARK(StackMap_Insert)->Arg(10000);
 
-// Тест 6: Наш CustomAllocator + std::map (10 000 аллокаций за наносекунды)
+// Тест 6: Наш CustomAllocator + std::map
 static void FreeListMap_Insert(benchmark::State& state) {
     const int elements = state.range(0);
     
     for (auto _ : state) {
         FreelistPool<POOL_SIZE_BYTES> fp;
         CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>> al(&fp); 
-        
-        // Передаем наш StackAllocator в std::map
+    
         std::map<int, int, std::less<int>, CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>>> m{
             std::less<int>(), 
             CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>>(al)};
         
         for (int i = 0; i < elements; ++i) {
-            m[i] = i; // Быстрый сдвиг указателя в пуле на стеке
+            m[i] = i;
         }
         benchmark::DoNotOptimize(m.size());
     }
 }
 BENCHMARK(FreeListMap_Insert)->Arg(10000);
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-template <typename Alloc>
-std::map<int, int, std::less<int>, Alloc> MakeMap(const Alloc& a) {
-    return std::map<int, int, std::less<int>, Alloc>(std::less<int>{}, a);
-}
-FreelistPool<POOL_SIZE_BYTES> fp;
-CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>> al(&fp);
-auto m1 = MakeMap(std::allocator<std::pair<const int, int>>{});
-auto m2 = MakeMap(CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>>(al));
-
-static void MapFind_FreeList(benchmark::State& state) {
-    const int elements = state.range(0);
+static std::vector<int> MakeSearchKeys(int elements) {
     std::vector<int> keys(elements);
-    std::iota(keys.begin(), keys.end(), 0);
-    // Перемешаем ключи, чтобы поиск не шел по идеальной стреле
-    std::mt19937 g(42);
-    std::shuffle(keys.begin(), keys.end(), g);
- 
-    for (auto _ : state) {
-	    state.PauseTiming(); // Не учитываем время заполнения
-        global_pool.reset();
-           
-        FreelistPool<POOL_SIZE_BYTES> fp;
-        CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>> al(&fp); 
-        
-        // Передаем наш StackAllocator в std::map
-        std::map<int, int, std::less<int>, CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>>> m{
-            std::less<int>(), 
-            CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>>(al)};
-        
-        for (int k : keys) m[k] = k;
-	        state.ResumeTiming();
 
-        // ЗАМЕР: Только поиск всех элементов
-        for (int k : keys) {
-        	auto it = m.find(k);
-            benchmark::DoNotOptimize(it);
-        }
-   }
- 
-}
-
-static void MapFind_Setup(benchmark::State& state, bool use_stack) {
-    const int elements = state.range(0);
-    std::vector<int> keys(elements);
     std::iota(keys.begin(), keys.end(), 0);
-    // Перемешаем ключи, чтобы поиск не шел по идеальной стреле
+
     std::mt19937 g(42);
     std::shuffle(keys.begin(), keys.end(), g);
 
-    if (use_stack) {
-        for (auto _ : state) {
-            state.PauseTiming(); // Не учитываем время заполнения
-            global_pool.reset();
-           
-            CustomAllocator<std::pair<const int, int>, StackPool<POOL_SIZE_BYTES>> a1(&global_pool);
-	     std::map<int, int, std::less<int>, CustomAllocator<std::pair<const int, int>, StackPool<POOL_SIZE_BYTES>>> m{
-            std::less<int>(), 
-            CustomAllocator<std::pair<const int, int>, StackPool<POOL_SIZE_BYTES>>(a1)};
-            
-            for (int k : keys) m[k] = k;
-            state.ResumeTiming();
+    return keys;
+}
 
-            // ЗАМЕР: Только поиск всех элементов
-            for (int k : keys) {
-                auto it = m.find(k);
-                benchmark::DoNotOptimize(it);
-            }
-        }
-    } else {
-        for (auto _ : state) {
-            state.PauseTiming();
-            std::map<int, int> m;
-            for (int k : keys) m[k] = k;
-            state.ResumeTiming();
+template <typename Map>
+static void RunMapFindScenario(
+    benchmark::State& state,
+    Map& m,
+    const std::vector<int>& keys)
+{
+    // Заполняем карту вне измеряемого интервала
+    for (int k : keys)
+        m[k] = k;
 
-            // ЗАМЕР: Только поиск всех элементов
-            for (int k : keys) {
-                auto it = m.find(k);
-                benchmark::DoNotOptimize(it);
-            }
-        }
+    state.ResumeTiming();
+
+    // Измеряем только поиск
+    for (int k : keys) {
+        auto it = m.find(k);
+        benchmark::DoNotOptimize(it);
     }
 }
 
-static void Benchmark_MapFind_Std(benchmark::State& state) { MapFind_Setup(state, false); }
-static void Benchmark_MapFind_Stack(benchmark::State& state) { MapFind_Setup(state, true); }
-BENCHMARK(Benchmark_MapFind_Std)->Arg(10000);
-BENCHMARK(Benchmark_MapFind_Stack)->Arg(10000);
+static void MapFind_Std(benchmark::State& state) {
+    const auto keys = MakeSearchKeys(state.range(0));
+
+    for (auto _ : state) {
+        state.PauseTiming();
+
+        std::map<int, int> m;
+
+        RunMapFindScenario(state, m, keys);
+    }
+}
+
+static void MapFind_Stack(benchmark::State& state) {
+    const auto keys = MakeSearchKeys(state.range(0));
+
+    for (auto _ : state) {
+        state.PauseTiming();
+
+        global_pool.reset();
+
+        using Allocator = CustomAllocator<
+            std::pair<const int, int>,
+            StackPool<POOL_SIZE_BYTES>>;
+
+        std::map<int, int, std::less<int>, Allocator> m{
+            std::less<int>{},
+            Allocator(&global_pool)
+        };
+
+        RunMapFindScenario(state, m, keys);
+    }
+}
+
+static void MapFind_FreeList(benchmark::State& state) {
+    const auto keys = MakeSearchKeys(state.range(0));
+
+    for (auto _ : state) {
+        state.PauseTiming();
+
+        FreelistPool<POOL_SIZE_BYTES> fp;
+
+        using Allocator = CustomAllocator<
+            std::pair<const int, int>,
+            FreelistPool<POOL_SIZE_BYTES>>;
+
+        std::map<int, int, std::less<int>, Allocator> m{
+            std::less<int>{},
+            Allocator(&fp)
+        };
+
+        RunMapFindScenario(state, m, keys);
+    }
+}
+
+BENCHMARK(MapFind_Std)->Arg(10000);
+BENCHMARK(MapFind_Stack)->Arg(10000);
 BENCHMARK(MapFind_FreeList)->Arg(10000);
+
+template <typename Map>
+static void RunMapDegradationScenario(Map& m) {
+    // 1. Первичное заполнение
+    for (int i = 0; i < 4000; ++i)
+        m[i] = i;
+
+    // 2. Удаляем четные элементы
+    for (int i = 0; i < 4000; i += 2)
+        m.erase(i);
+
+    // 3. Добавляем новые элементы
+    for (int i = 10000; i < 12000; ++i)
+        m[i] = i;
+
+    // 4. Поиск по всему диапазону
+    int found = 0;
+
+    for (int i = 0; i < 12000; ++i) {
+        if (m.find(i) != m.end())
+            ++found;
+    }
+
+    benchmark::DoNotOptimize(found);
+}
+
+using MapValue = std::pair<const int, int>;
+
+using StdMap = std::map<int, int>;
+
+using StackMapAllocator =
+    CustomAllocator<MapValue, StackPool<POOL_SIZE_BYTES>>;
+
+using StackMap =
+    std::map<int, int, std::less<int>, StackMapAllocator>;
+
+using FreeListMapAllocator =
+    CustomAllocator<MapValue, FreelistPool<POOL_SIZE_BYTES>>;
+
+using FreeListMap =
+    std::map<int, int, std::less<int>, FreeListMapAllocator>;
 
 static void Benchmark_MapDegradation_Std(benchmark::State& state) {
     for (auto _ : state) {
-        std::map<int, int> m;
-        for (int i = 0; i < 4000; ++i) m[i] = i;
-        for (int i = 0; i < 4000; i += 2) m.erase(i);
-        for (int i = 10000; i < 12000; ++i) m[i] = i;
-
-        int found = 0;
-        for (int i = 0; i < 12000; ++i) {
-            if (m.find(i) != m.end()) found++;
-        }
-        benchmark::DoNotOptimize(found);
+        StdMap m;
+        RunMapDegradationScenario(m);
     }
 }
-BENCHMARK(Benchmark_MapDegradation_Std);
 
 static void Benchmark_MapDegradation_Stack(benchmark::State& state) {
     for (auto _ : state) {
         global_pool.reset();
-        
-        CustomAllocator<std::pair<const int, int>, StackPool<POOL_SIZE_BYTES>> a1(&global_pool);
-	     std::map<int, int, std::less<int>, CustomAllocator<std::pair<const int, int>, StackPool<POOL_SIZE_BYTES>>> m{
-            std::less<int>(), 
-            CustomAllocator<std::pair<const int, int>, StackPool<POOL_SIZE_BYTES>>(a1)};
 
-        // 1. Первичное заполнение
-        for (int i = 0; i < 4000; ++i) m[i] = i;
+        StackMap m{
+            std::less<int>{},
+            StackMapAllocator(&global_pool)
+        };
 
-        // 2. Имитация бурной жизнедеятельности (Удаляем четные, вставляем новые)
-        // Наш пул на стеке при этом раздувается, так как deallocate не освобождает байты!
-        for (int i = 0; i < 4000; i += 2) m.erase(i);
-        for (int i = 10000; i < 12000; ++i) m[i] = i;
-
-        // 3. ЗАМЕР: Поиск по "засоренному" дереву
-        int found = 0;
-        for (int i = 0; i < 12000; ++i) {
-            if (m.find(i) != m.end()) found++;
-        }
-        benchmark::DoNotOptimize(found);
+        RunMapDegradationScenario(m);
     }
 }
-BENCHMARK(Benchmark_MapDegradation_Stack);
 
 static void Benchmark_MapDegradation_FreeList(benchmark::State& state) {
     for (auto _ : state) {
+        FreelistPool<POOL_SIZE_BYTES> fp;
 
-	 FreelistPool<POOL_SIZE_BYTES> fp;
-        CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>> al(&fp); 
-        
-        // Передаем наш StackAllocator в std::map
-        std::map<int, int, std::less<int>, CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>>> m{
-            std::less<int>(), 
-            CustomAllocator<std::pair<const int, int>, FreelistPool<POOL_SIZE_BYTES>>(al)};
-       
+        FreeListMap m{
+            std::less<int>{},
+            FreeListMapAllocator(&fp)
+        };
 
-        // 1. Первичное заполнение
-        for (int i = 0; i < 4000; ++i) m[i] = i;
-
-        // 2. Имитация бурной жизнедеятельности (Удаляем четные, вставляем новые)
-        // Наш пул на стеке при этом раздувается, так как deallocate не освобождает байты!
-        for (int i = 0; i < 4000; i += 2) m.erase(i);
-        for (int i = 10000; i < 12000; ++i) m[i] = i;
-
-        // 3. ЗАМЕР: Поиск по "засоренному" дереву
-        int found = 0;
-        for (int i = 0; i < 12000; ++i) {
-            if (m.find(i) != m.end()) found++;
-        }
-        benchmark::DoNotOptimize(found);
+        RunMapDegradationScenario(m);
     }
 }
+
+BENCHMARK(Benchmark_MapDegradation_Std);
+BENCHMARK(Benchmark_MapDegradation_Stack);
 BENCHMARK(Benchmark_MapDegradation_FreeList);
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 BENCHMARK_MAIN();
 
